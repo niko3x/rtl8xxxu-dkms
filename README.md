@@ -14,16 +14,17 @@ no vendor code here. Everything is GPL-2.0, like the kernel.
 |---|---|
 | The rate in the radiotap header of injected frames is ignored. The firmware picks the rate instead (on an RTL8192CU every injected frame went out at MCS 7). | Injected frames go out at exactly the requested legacy rate or HT MCS, with the requested guard interval and no rate fallback. |
 | The radiotap retry count of injected frames is ignored, and `NOACK` frames are still retried up to 48 times. Unicast frames to an absent station stalled injection for more than 100 seconds in testing. | The retry count is honoured (0–63), and `NOACK` frames are sent once. |
+| Injected frames are always sent at 20 MHz, even on a 40 MHz channel. | Frames that ask for 40 MHz are sent at 40 MHz (HT40+ and HT40-). |
 | Every frame is reported as ACKed once its USB transfer finishes. | `NOACK` frames are reported as such. On RTL8188CU/RTL8192CU, the real ACK status and retry count come from the firmware's TX report. |
 
 ## Hardware status
 
-| Chip | Injected rate | Retry count | Real TX status |
-|---|---|---|---|
-| RTL8188CU, RTL8192CU | ✅ tested on RTL8192CU | ✅ tested on RTL8192CU | ✅ tested on RTL8192CU |
-| RTL8723AU | should work, untested | should work, untested | no |
-| RTL8192EU, RTL8723BU, RTL8188FU, RTL8710BU, RTL8192FU | compile tested only | compile tested only | no |
-| RTL8188EU | compile tested only | compile tested only | no |
+| Chip | Injected rate | Retry count | 40 MHz | Real TX status |
+|---|---|---|---|---|
+| RTL8188CU, RTL8192CU | ✅ tested on RTL8192CU | ✅ tested on RTL8192CU | ✅ tested on RTL8192CU | ✅ tested on RTL8192CU |
+| RTL8723AU | should work, untested | should work, untested | should work, untested | no |
+| RTL8192EU, RTL8723BU, RTL8188FU, RTL8710BU, RTL8192FU | compile tested only | compile tested only | no | no |
+| RTL8188EU | compile tested only | compile tested only | compile tested only | no |
 
 If you own one of the untested chips, test reports are very welcome. See
 [Testing](#testing).
@@ -72,11 +73,12 @@ Inject with any tool that writes radiotap frames to the monitor interface
 (for example wfb-ng, aircrack-ng, scapy). These radiotap fields are
 honoured:
 
-- `RATE` (legacy rates) and `MCS` (HT MCS 0–15, short GI)
+- `RATE` (legacy rates) and `MCS` (HT MCS 0–15, short GI, 40 MHz)
 - `DATA_RETRIES`
 - `TX_FLAGS` `NOACK`
 
-40 MHz injection is not tested yet.
+For 40 MHz, set the monitor interface to a 40 MHz channel first, e.g.
+`iw dev wlan1 set channel 6 HT40+`.
 
 ## TX status
 
@@ -95,8 +97,8 @@ radiotap header (`TX_FLAGS` fail bit, `DATA_RETRIES`).
 
 `tools/` has the two small programs used to test these patches:
 
-- `inject IFACE COUNT [MCS|sMCS|L<rate in 500 kbps units>|-1] [DST BSSID]`
-  sends test frames. `NOACK=0`, `RETRIES=n`, `DELAY_US=n` and `NOSLEEP=1`
+- `inject IFACE COUNT [[w][s]MCS|L<rate in 500 kbps units>|-1] [DST BSSID]`
+  sends test frames (`w` = 40 MHz, `s` = short GI, e.g. `ws7`). `NOACK=0`, `RETRIES=n`, `DELAY_US=n` and `NOSLEEP=1`
   in the environment change how.
 - `capture IFACE SECONDS` counts the test frames seen on a monitor
   interface and prints their rate, MCS, GI and retry flag, plus the TX

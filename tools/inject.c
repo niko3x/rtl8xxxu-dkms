@@ -12,12 +12,14 @@
 
 int main(int argc, char **argv)
 {
-	if (argc < 3) { fprintf(stderr, "usage: %s IFACE COUNT [MCS|sMCS (short GI)|L<500kbps units>|-1] [DST BSSID]\n", argv[0]); return 1; }
-	int count = atoi(argv[2]), mcs = -1, legacy = -1, sgi = 0;
+	if (argc < 3) { fprintf(stderr, "usage: %s IFACE COUNT [[w][s]MCS (w=40MHz, s=short GI)|L<500kbps units>|-1] [DST BSSID]\n", argv[0]); return 1; }
+	int count = atoi(argv[2]), mcs = -1, legacy = -1, sgi = 0, bw40 = 0;
 	if (argc > 3) {
-		if (argv[3][0] == 'L') legacy = atoi(argv[3] + 1);
-		else if (argv[3][0] == 's') { sgi = 1; mcs = atoi(argv[3] + 1); }
-		else mcs = atoi(argv[3]);
+		const char *r = argv[3];
+		if (*r == 'w') { bw40 = 1; r++; }	/* w = 40 MHz */
+		if (*r == 's') { sgi = 1; r++; }	/* s = short GI */
+		if (*r == 'L') legacy = atoi(r + 1);
+		else mcs = atoi(r);
 	}
 	int s = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (s < 0) { perror("socket"); return 1; }
@@ -38,15 +40,17 @@ int main(int argc, char **argv)
 	rt[o] = noack ? 0x08 : 0x00; rt[o + 1] = 0x00; o += 2;   /* IEEE80211_RADIOTAP_F_TX_NOACK */
 	if (retries >= 0) rt[o++] = retries;
 	if (mcs >= 0) {   /* known: MCS idx + GI; flags: GI */
-		rt[o] = 0x02 | 0x04; rt[o + 1] = sgi ? 0x04 : 0; rt[o + 2] = mcs; o += 3;
+		/* known: BW, MCS idx, GI; flags: BW 1 = 40 MHz, GI */
+		rt[o] = 0x01 | 0x02 | 0x04; rt[o + 1] = (bw40 ? 0x01 : 0) | (sgi ? 0x04 : 0);
+		rt[o + 2] = mcs; o += 3;
 	}
 	int rtlen = o;
 	rt[2] = rtlen; memcpy(rt + 4, &present, 4);
 	memcpy(pkt, rt, rtlen); n = rtlen;
 	unsigned char hdr[24] = { 0x08, 0x00, 0, 0,          /* data frame */
 		0xff,0xff,0xff,0xff,0xff,0xff,                     /* addr1 bcast */
-		0x57,0x42,0x75,0x05,0xd6,0x00,                     /* addr2 test */
-		0x57,0x42,0x75,0x05,0xd6,0x00, 0, 0 };
+		0x02,0x57,0x42,0x75,0x05,0xd6,                     /* addr2 test */
+		0x02,0x57,0x42,0x75,0x05,0xd6, 0, 0 };
 	if (argc > 5) {	/* addressed FromDS frame: addr1=DST, addr2=addr3=BSSID */
 		unsigned int d[6], b[6];
 		sscanf(argv[4], "%x:%x:%x:%x:%x:%x", &d[0], &d[1], &d[2], &d[3], &d[4], &d[5]);
