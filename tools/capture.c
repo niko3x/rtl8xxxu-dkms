@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 		struct sockaddr_ll from; socklen_t fl = sizeof(from);
 		int n = recvfrom(s, b, sizeof(b), 0, (struct sockaddr *)&from, &fl);
 		if (n > 0 && from.sll_pkttype == PACKET_OUTGOING) continue;
-		if (n < 8 || !memmem(b, n, "LIBRE-RTL8XXXU", 14)) continue;
+		if (n < 8 || !memmem(b, n, "RTL8XXXU-INJECT", 15)) continue;
 		int rtlen = b[2] | b[3] << 8; uint32_t present; memcpy(&present, b + 4, 4);
 		int off = 8; uint32_t p = present;
 		while (p & (1u << 31)) { memcpy(&p, b + off, 4); off += 4; }

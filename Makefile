@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 #
-# Out-of-tree build of rtl8xxxu with the rtl8xxxu-libre patches.
+# Out-of-tree build of rtl8xxxu with the rtl8xxxu-dkms patches.
 
 KVER ?= $(shell uname -r)
 KDIR ?= /lib/modules/$(KVER)/build

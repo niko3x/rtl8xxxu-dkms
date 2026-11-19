@@ -59,7 +59,7 @@ int main(int argc, char **argv)
 		for (int i = 0; i < 6; i++) { hdr[4 + i] = d[i]; hdr[10 + i] = b[i]; hdr[16 + i] = b[i]; }
 	}
 	memcpy(pkt + n, hdr, 24); n += 24;
-	const char *payload = "LIBRE-RTL8XXXU-INJECT-TEST";
+	const char *payload = "RTL8XXXU-INJECT-TEST";
 	memcpy(pkt + n, payload, strlen(payload)); n += strlen(payload);
 
 	int ok = 0;

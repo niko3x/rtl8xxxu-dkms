@@ -1,4 +1,4 @@
-# rtl8xxxu-libre
+# rtl8xxxu-dkms
 
 The mainline Linux `rtl8xxxu` Wi-Fi driver with working monitor-mode
 packet injection and real TX status, packaged for DKMS so you can use it
@@ -10,7 +10,7 @@ no vendor code here. Everything is GPL-2.0, like the kernel.
 
 ## What it fixes
 
-| Problem in the stock driver | With rtl8xxxu-libre |
+| Problem in the stock driver | With rtl8xxxu-dkms |
 |---|---|
 | The rate in the radiotap header of injected frames is ignored. The firmware picks the rate instead (on an RTL8192CU every injected frame went out at MCS 7). | Injected frames go out at exactly the requested legacy rate or HT MCS, with the requested guard interval and no rate fallback. |
 | The radiotap retry count of injected frames is ignored, and `NOACK` frames are still retried up to 48 times. Unicast frames to an absent station stalled injection for more than 100 seconds in testing. | The retry count is honoured (0–63), and `NOACK` frames are sent once. |
@@ -35,8 +35,8 @@ Requires kernel headers and DKMS. Tested on Linux 7.3. Older kernels may
 not build, because the sources follow the current kernel API.
 
 ```sh
-git clone <this repository> rtl8xxxu-libre
-sudo dkms install ./rtl8xxxu-libre
+git clone <this repository> rtl8xxxu-dkms
+sudo dkms install ./rtl8xxxu-dkms
 ```
 
 To build and load without DKMS:
@@ -51,10 +51,10 @@ driver. If that one binds to your device (`readlink
 /sys/class/net/<iface>/device/driver`), stop it from loading:
 
 ```sh
-echo "blacklist rtl8192cu" | sudo tee /etc/modprobe.d/rtl8xxxu-libre.conf
+echo "blacklist rtl8192cu" | sudo tee /etc/modprobe.d/rtl8xxxu-dkms.conf
 ```
 
-To uninstall: `sudo dkms remove rtl8xxxu-libre/0.1.0 --all` (and delete
+To uninstall: `sudo dkms remove rtl8xxxu-dkms/0.1.0 --all` (and delete
 that modprobe file if you created it).
 
 ## Usage

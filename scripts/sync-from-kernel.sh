@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
 # Copy the rtl8xxxu sources from a kernel tree (e.g. a checkout of the
-# rtw-next branch with the rtl8xxxu-libre patches applied) into src/.
+# rtw-next branch with the rtl8xxxu-dkms patches applied) into src/.
 set -e
 [ -n "$1" ] || { echo "usage: $0 KERNEL_TREE" >&2; exit 1; }
 src="$1/drivers/net/wireless/realtek/rtl8xxxu"
