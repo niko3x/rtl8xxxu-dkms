@@ -35,7 +35,7 @@ Requires kernel headers and DKMS. Tested on Linux 7.3. Older kernels may
 not build, because the sources follow the current kernel API.
 
 ```sh
-git clone <this repository> rtl8xxxu-dkms
+git clone https://github.com/niko3x/rtl8xxxu-dkms.git
 sudo dkms install ./rtl8xxxu-dkms
 ```
 
@@ -109,9 +109,17 @@ channel is needed to check what actually goes over the air.
 
 ## Upstream
 
-The same patches are being sent to `linux-wireless@vger.kernel.org`. When
-they are merged, the stock kernel driver will behave the same and this
-package will no longer be needed. `src/BASE` records which upstream
+The patches in this package have been submitted to `linux-wireless` for
+inclusion in the kernel (`rtw-next` tree):
+
+| Series | Status |
+|---|---|
+| Injected rate, retry count and 40 MHz (RTL8188CU/RTL8192CU/RTL8723AU) | under review |
+| Real TX status (RTL8188CU/RTL8192CU) | under review |
+| The same injection fixes for gen2 chips and RTL8188EU | not submitted yet (needs testers) |
+
+When they are merged, the stock kernel driver will behave the same and
+this package will no longer be needed. `src/BASE` records which upstream
 commit the sources are based on. `scripts/sync-from-kernel.sh` refreshes
 `src/` from a kernel tree.
 

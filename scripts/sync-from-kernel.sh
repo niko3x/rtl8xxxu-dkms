@@ -11,6 +11,6 @@ rm -f "$dst"/*.c "$dst"/*.h
 cp "$src"/*.c "$src"/*.h "$src"/Makefile "$dst"/
 rm -f "$dst"/*.mod.c
 if git -C "$1" rev-parse HEAD >/dev/null 2>&1; then
-	echo "$(git -C "$1" describe --always --tags HEAD)" > "$dst"/BASE
+	echo "$(git -C "$1" describe --always --tags HEAD)" > "$dst"/BASE  # edit to name the public upstream base before committing
 fi
 echo "synced from $src"
