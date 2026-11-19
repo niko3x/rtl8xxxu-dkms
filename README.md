@@ -8,6 +8,26 @@ The code is the upstream driver plus a small set of patches that are being
 submitted to the Linux kernel (`linux-wireless`, `rtw-next` tree). There is
 no vendor code here. Everything is GPL-2.0, like the kernel.
 
+## Supported adapters
+
+`rtl8xxxu` is one driver for many Realtek USB Wi-Fi chips (the "xxx" is a
+wildcard), so this package works with adapters based on:
+
+**RTL8188CU, RTL8192CU, RTL8188RU, RTL8191CU, RTL8723AU, RTL8188EU,
+RTL8188EUS, RTL8192EU, RTL8723BU, RTL8188FU, RTL8710BU (RTL8188GU),
+RTL8192FU**
+
+To check yours, run `lsusb` and look for the `ID xxxx:xxxx` of your
+adapter in [SUPPORTED_DEVICES.md](SUPPORTED_DEVICES.md) (122 USB IDs,
+generated from the driver). For example, an RTL8192CU often shows up as
+`ID 0bda:8178 Realtek Semiconductor Corp. RTL8192CU 802.11n WLAN Adapter`.
+
+Some of these chips also have other drivers (the vendor driver, or
+`rtl8192cu` in the kernel). This package replaces the kernel's `rtl8xxxu`
+module; see [Install](#install) for making sure it is the one that binds
+to your adapter. Not every chip has every fix yet, see
+[Hardware status](#hardware-status).
+
 ## What it fixes
 
 | Problem in the stock driver | With rtl8xxxu-dkms |
