@@ -577,6 +577,7 @@ struct rtl8xxxu_txdesc40 {
 #define TXDESC32_RETRY_LIMIT_ENABLE	BIT(17)
 #define TXDESC32_RETRY_LIMIT_SHIFT	18
 #define TXDESC32_RETRY_LIMIT_MASK	0x00fc0000
+#define TXDESC32_RETRY_LIMIT_MAX	63
 
 /* Word 6 */
 #define TXDESC_MAX_AGG_SHIFT		11
@@ -1548,17 +1549,6 @@ enum c2h_evt_8723b {
 	C2H_8723B_FW_DEBUG = 0xff,
 };
 
-/* Gen1 C2H events are read from the REG_C2HEVT_MSG_NORMAL mailbox */
-#define C2H_EVT_HOST_CLOSE		0x00
-#define C2H_EVT_FW_CLOSE		0xff
-#define C2H_EVT_ID_MASK			GENMASK(3, 0)
-#define C2H_EVT_CCX_TX_RPT		3
-/* Offsets in the CCX TX report payload, after the 2 byte event header */
-#define CCX_TX_RPT_RETRY		0
-#define  CCX_TX_RPT_RETRY_CNT		GENMASK(5, 0)
-#define CCX_TX_RPT_STATUS		7
-#define  CCX_TX_RPT_PKT_OK		BIT(6)
-
 enum bt_info_src_8723b {
 	BT_INFO_SRC_8723B_WIFI_FW = 0x0,
         BT_INFO_SRC_8723B_BT_RSP = 0x1,
@@ -1824,6 +1814,11 @@ struct rtl8xxxu_priv {
 	bool shutdown;
 	struct delayed_work rx_urb_wq;
 
+	spinlock_t tx_report_lock; /* protects tx_report_skb */
+	struct sk_buff *tx_report_skb;
+	unsigned long tx_report_start;
+	struct delayed_work tx_report_poll_work;
+
 	u8 mac_addr[ETH_ALEN];
 	char chip_name[8];
 	char chip_vendor[8];
@@ -1932,11 +1927,6 @@ struct rtl8xxxu_priv {
 	struct work_struct c2hcmd_work;
 	struct sk_buff_head c2hcmd_queue;
 	struct delayed_work update_beacon_work;
-	/* Frame waiting for its TX report in the C2H event mailbox */
-	struct sk_buff *tx_report_skb;
-	spinlock_t tx_report_lock; /* protects tx_report_skb */
-	struct delayed_work tx_report_work;
-	unsigned long tx_report_start;
 	struct rtl8xxxu_btcoex bt_coex;
 	struct rtl8xxxu_ra_report ra_report;
 	struct rtl8xxxu_cfo_tracking cfo_tracking;

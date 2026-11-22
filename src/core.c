@@ -5160,10 +5160,10 @@ static void rtl8xxxu_free_tx_urb(struct rtl8xxxu_priv *priv,
 static bool rtl8xxxu_tx_report_claim(struct rtl8xxxu_priv *priv,
 				     struct sk_buff *skb)
 {
-	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned long flags;
+	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 	bool claimed = false;
+	unsigned long flags;
 
 	if (!priv->fops->has_c2hevt_tx_report ||
 	    !(tx_info->flags & IEEE80211_TX_CTL_REQ_TX_STATUS) ||
@@ -5196,10 +5196,10 @@ static bool rtl8xxxu_tx_report_release(struct rtl8xxxu_priv *priv,
 	return claimed;
 }
 
-static void rtl8xxxu_tx_report_work(struct work_struct *work)
+static void rtl8xxxu_tx_report_poll_work(struct work_struct *work)
 {
 	struct rtl8xxxu_priv *priv = container_of(work, struct rtl8xxxu_priv,
-						  tx_report_work.work);
+						  tx_report_poll_work.work);
 	struct ieee80211_tx_info *tx_info;
 	unsigned long flags, elapsed;
 	u8 retry = 0, status = 0;
@@ -5210,10 +5210,10 @@ static void rtl8xxxu_tx_report_work(struct work_struct *work)
 		u8 id = rtl8xxxu_read8(priv, REG_C2HEVT_MSG_NORMAL);
 
 		if ((id & C2H_EVT_ID_MASK) == C2H_EVT_CCX_TX_RPT) {
-			retry = rtl8xxxu_read8(priv, REG_C2HEVT_MSG_NORMAL + 2 +
-						     CCX_TX_RPT_RETRY);
-			status = rtl8xxxu_read8(priv, REG_C2HEVT_MSG_NORMAL + 2 +
-						      CCX_TX_RPT_STATUS);
+			retry = rtl8xxxu_read8(priv, REG_C2HEVT_MSG_NORMAL +
+						     C2H_EVT_CCX_RETRY_OFFSET);
+			status = rtl8xxxu_read8(priv, REG_C2HEVT_MSG_NORMAL +
+						      C2H_EVT_CCX_STATUS_OFFSET);
 			reported = true;
 		}
 		rtl8xxxu_write8(priv, REG_C2HEVT_CLEAR, C2H_EVT_HOST_CLOSE);
@@ -5222,7 +5222,7 @@ static void rtl8xxxu_tx_report_work(struct work_struct *work)
 	elapsed = jiffies - priv->tx_report_start;
 	if (!reported && elapsed < RTL8XXXU_TX_REPORT_TIMEOUT) {
 		/* Most frames are done within a few ms, poll often at first */
-		ieee80211_queue_delayed_work(priv->hw, &priv->tx_report_work,
+		ieee80211_queue_delayed_work(priv->hw, &priv->tx_report_poll_work,
 					     elapsed < msecs_to_jiffies(20) ?
 					     1 : msecs_to_jiffies(10));
 		return;
@@ -5240,8 +5240,8 @@ static void rtl8xxxu_tx_report_work(struct work_struct *work)
 	ieee80211_tx_info_clear_status(tx_info);
 	if (!(tx_info->flags & IEEE80211_TX_CTL_INJECTED))
 		tx_info->status.rates[0].idx = -1;
-	tx_info->status.rates[0].count = (retry & CCX_TX_RPT_RETRY_CNT) + 1;
-	if (status & CCX_TX_RPT_PKT_OK)
+	tx_info->status.rates[0].count = (retry & CCX_RETRY_CNT_MASK) + 1;
+	if (status & CCX_PKT_OK)
 		tx_info->flags |= IEEE80211_TX_STAT_ACK;
 
 	ieee80211_tx_status_irqsafe(priv->hw, skb);
@@ -5265,7 +5265,7 @@ static void rtl8xxxu_tx_complete(struct urb *urb)
 	if (READ_ONCE(priv->tx_report_skb) == skb) {
 		if (!urb->status) {
 			priv->tx_report_start = jiffies;
-			ieee80211_queue_delayed_work(hw, &priv->tx_report_work, 0);
+			ieee80211_queue_delayed_work(hw, &priv->tx_report_poll_work, 0);
 			rtl8xxxu_free_tx_urb(priv, tx_urb);
 			return;
 		}
@@ -5336,10 +5336,6 @@ static void rtl8xxxu_dump_action(struct device *dev,
 	}
 }
 
-/*
- * Use the rate from the radiotap header of an injected frame, if any.
- * mac80211 has already checked it against what we advertise.
- */
 static bool rtl8xxxu_tx_rate_inject(struct ieee80211_tx_info *tx_info,
 				    u32 *rate, bool *sgi)
 {
@@ -5394,7 +5390,8 @@ rtl8xxxu_fill_txdesc_v1(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	u32 rate = 0;
 	u16 seq_number;
 	int retries;
-	bool inject, bw40;
+	bool inject;
+	bool bw40;
 
 	inject = rtl8xxxu_tx_rate_inject(tx_info, &rate, &sgi);
 	retries = rtl8xxxu_tx_retry_inject(tx_info);
@@ -5420,7 +5417,13 @@ rtl8xxxu_fill_txdesc_v1(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		tx_desc->txdw5 = cpu_to_le32(rate);
 		tx_desc->txdw4 |= cpu_to_le32(TXDESC32_USE_DRIVER_RATE);
-		tx_desc->txdw5 |= cpu_to_le32(6 << TXDESC32_RETRY_LIMIT_SHIFT);
+		if (retries < 0)
+			retries = 6;
+	}
+
+	if (retries >= 0) {
+		tx_desc->txdw5 |= le32_encode_bits(retries,
+						   TXDESC32_RETRY_LIMIT_MASK);
 		tx_desc->txdw5 |= cpu_to_le32(TXDESC32_RETRY_LIMIT_ENABLE);
 	}
 
@@ -5451,12 +5454,6 @@ rtl8xxxu_fill_txdesc_v1(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	if (inject)
 		tx_desc->txdw4 |= cpu_to_le32(TXDESC32_USE_DRIVER_RATE |
 					      TXDESC_DISABLE_DATA_FB);
-
-	if (retries >= 0) {
-		tx_desc->txdw5 &= ~cpu_to_le32(TXDESC32_RETRY_LIMIT_MASK);
-		tx_desc->txdw5 |= cpu_to_le32(retries << TXDESC32_RETRY_LIMIT_SHIFT |
-					      TXDESC32_RETRY_LIMIT_ENABLE);
-	}
 
 	/*
 	 * rts_rate is zero if RTS/CTS or CTS to SELF are not enabled
@@ -5520,8 +5517,13 @@ rtl8xxxu_fill_txdesc_v2(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		tx_desc40->txdw4 = cpu_to_le32(rate);
 		tx_desc40->txdw3 |= cpu_to_le32(TXDESC40_USE_DRIVER_RATE);
-		tx_desc40->txdw4 |=
-			cpu_to_le32(6 << TXDESC40_RETRY_LIMIT_SHIFT);
+		if (retries < 0)
+			retries = 6;
+	}
+
+	if (retries >= 0) {
+		tx_desc40->txdw4 |= le32_encode_bits(retries,
+						     TXDESC40_RETRY_LIMIT_MASK);
 		tx_desc40->txdw4 |= cpu_to_le32(TXDESC40_RETRY_LIMIT_ENABLE);
 	}
 
@@ -5536,12 +5538,6 @@ rtl8xxxu_fill_txdesc_v2(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 						TXDESC40_DISABLE_DATA_FB);
 		if (sgi)
 			tx_desc40->txdw5 |= cpu_to_le32(TXDESC40_SHORT_GI);
-	}
-
-	if (retries >= 0) {
-		tx_desc40->txdw4 &= ~cpu_to_le32(TXDESC40_RETRY_LIMIT_MASK);
-		tx_desc40->txdw4 |= cpu_to_le32(retries << TXDESC40_RETRY_LIMIT_SHIFT |
-						TXDESC40_RETRY_LIMIT_ENABLE);
 	}
 
 	tx_desc40->txdw4 |= cpu_to_le32(rts_rate << TXDESC40_RTS_RATE_SHIFT);
@@ -5581,7 +5577,8 @@ rtl8xxxu_fill_txdesc_v3(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	u32 rate = 0;
 	u16 seq_number;
 	int retries;
-	bool inject, bw40;
+	bool inject;
+	bool bw40;
 
 	inject = rtl8xxxu_tx_rate_inject(tx_info, &rate, &sgi);
 	retries = rtl8xxxu_tx_retry_inject(tx_info);
@@ -5612,7 +5609,13 @@ rtl8xxxu_fill_txdesc_v3(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
 		tx_desc->txdw5 = cpu_to_le32(rate);
 		tx_desc->txdw4 |= cpu_to_le32(TXDESC32_USE_DRIVER_RATE);
-		tx_desc->txdw5 |= cpu_to_le32(6 << TXDESC32_RETRY_LIMIT_SHIFT);
+		if (retries < 0)
+			retries = 6;
+	}
+
+	if (retries >= 0) {
+		tx_desc->txdw5 |= le32_encode_bits(retries,
+						   TXDESC32_RETRY_LIMIT_MASK);
 		tx_desc->txdw5 |= cpu_to_le32(TXDESC32_RETRY_LIMIT_ENABLE);
 	}
 
@@ -5643,12 +5646,6 @@ rtl8xxxu_fill_txdesc_v3(struct ieee80211_hw *hw, struct ieee80211_hdr *hdr,
 	if (inject)
 		tx_desc->txdw4 |= cpu_to_le32(TXDESC32_USE_DRIVER_RATE |
 					      TXDESC_DISABLE_DATA_FB);
-
-	if (retries >= 0) {
-		tx_desc->txdw5 &= ~cpu_to_le32(TXDESC32_RETRY_LIMIT_MASK);
-		tx_desc->txdw5 |= cpu_to_le32(retries << TXDESC32_RETRY_LIMIT_SHIFT |
-					      TXDESC32_RETRY_LIMIT_ENABLE);
-	}
 
 	/*
 	 * rts_rate is zero if RTS/CTS or CTS to SELF are not enabled
@@ -7750,7 +7747,7 @@ static void rtl8xxxu_stop(struct ieee80211_hw *hw, bool suspend)
 
 	usb_kill_anchored_urbs(&priv->rx_anchor);
 	usb_kill_anchored_urbs(&priv->tx_anchor);
-	cancel_delayed_work_sync(&priv->tx_report_work);
+	cancel_delayed_work_sync(&priv->tx_report_poll_work);
 	if (priv->tx_report_skb) {
 		ieee80211_free_txskb(hw, priv->tx_report_skb);
 		priv->tx_report_skb = NULL;
@@ -8068,7 +8065,7 @@ static int rtl8xxxu_probe(struct usb_interface *interface,
 	INIT_DELAYED_WORK(&priv->ra_watchdog, rtl8xxxu_watchdog_callback);
 	INIT_DELAYED_WORK(&priv->update_beacon_work, rtl8xxxu_update_beacon_work_callback);
 	spin_lock_init(&priv->tx_report_lock);
-	INIT_DELAYED_WORK(&priv->tx_report_work, rtl8xxxu_tx_report_work);
+	INIT_DELAYED_WORK(&priv->tx_report_poll_work, rtl8xxxu_tx_report_poll_work);
 	skb_queue_head_init(&priv->c2hcmd_queue);
 
 	usb_set_intfdata(interface, hw);
@@ -8172,8 +8169,7 @@ static int rtl8xxxu_probe(struct usb_interface *interface,
 	SET_IEEE80211_PERM_ADDR(hw, priv->mac_addr);
 
 	hw->extra_tx_headroom = priv->fops->tx_desc_size;
-	/* The TX descriptor retry limit is 6 bits wide */
-	hw->max_rate_tries = 64;
+	hw->max_rate_tries = TXDESC32_RETRY_LIMIT_MAX + 1;
 	ieee80211_hw_set(hw, SIGNAL_DBM);
 
 	/*
